@@ -1,0 +1,354 @@
+---
+title: "506 ASS5"
+author: "Manning Wu"
+format: pdf
+---
+Github link: https://github.com/manningwu0528/506-HW5
+
+```{r}
+#| echo: false
+#| warning: false
+library(ggplot2)
+library(reshape2)
+library(tidyverse)
+library(data.table)
+nnmaps <- read.csv("chicago-nmmaps.csv")
+```
+
+## Problem 1
+
+### (a) Produce a graph of the mean monthly temperature in celsius
+
+```{r}
+#| warning: false
+df <- nnmaps
+
+## Generate a data.frame containing the mean monthly temperature in celsius
+df_month <- df %>% group_by(month_numeric, season) %>%
+  filter(!is.na(temp)) %>% 
+  summarise(avg_temp = mean(temp)) %>% 
+  mutate(avg_temp = (avg_temp - 32) * (5/9))
+
+## Generate the graph
+ggplot(df_month, aes(x = month_numeric, y = avg_temp, color = season)) +
+  geom_point() +
+  geom_line(linewidth = 1) +
+  scale_color_manual(values = c("red", "pink", "orange", "brown")) +
+  labs(title = "Scatterplot for average monthly temperature", 
+       x = "Month", y = "Temperature (celsius)") +
+  theme_minimal()
+```
+
+### (b) Produce a similar plot with four sets of lines.
+
+```{r}
+#| warning: false
+
+## Generate a data.frame containing four mean factors
+df_month_2 <- df %>% group_by(month_numeric, season) %>%
+  summarise(avg_temp = mean(temp, na.rm = TRUE), 
+            avg_o3 = mean(o3, na.rm = TRUE), 
+            avg_pm10 = mean(pm10, na.rm = TRUE), 
+            avg_dewpoint = mean(dewpoint, na.rm = TRUE)) %>% 
+  mutate(avg_temp = (avg_temp - 32) * (5/9))
+
+## Add season for graphing
+df_month_2 <- melt(df_month_2, id=c("month_numeric", "season"))
+
+## Generate the graph
+ggplot(df_month_2, aes(x = month_numeric, y = value, group = variable, 
+                             color = season, shape = variable)) +
+  geom_point() +
+  geom_line() +
+  scale_color_manual(values = c("red", "pink", "orange", "brown")) +
+  labs(title = "Scatterplot for four mean factors", 
+       x = "Month", y = "Mean Value") +
+  theme_minimal()
+```
+\textbf{Comment}: It seems like mean monthly PM10 has the least seasonal trend.
+
+## Problem 2
+
+### (a) Construction
+
+To make constructor easier, users are required to pass into separate vectors.
+
+```{r}
+## Define a S4 class to begin
+#' Title: Poly S4 Class
+#'
+#' @slot coef numeric coefficient vector of the polynomial
+#' @slot power numeric power vector of the polynomial
+setClass("poly",
+         slots = c(coef = "numeric",
+                   power = "numeric"))
+
+## Define a constructor
+#' Title: Create a `poly` constructor
+#'
+#' @param coef numeric coefficient vector of the polynomial
+#' @param power numeric power vector of the polynomial
+#'
+#' @return New `poly` object
+#' @export
+#'
+#' @examples
+make_poly <- function(coef, power) {
+  obj <- new("poly", coef = coef, power = power)
+  validObject(obj) # Validate whether the length is matched
+  
+  df = data.frame(coef = obj@coef, power = obj@power)
+  ## data processing, adding coefficients for the same power
+  df = df %>% group_by(power) %>%
+    summarise(coef = sum(coef)) %>%
+    arrange(-power)
+  obj@coef = df$coef
+  obj@power = df$power
+  return(obj)
+}
+
+## Define a validator
+setValidity ("poly", function(object) {
+  ## Since we require slot to be numeric, it is not necessary to validate numeric
+  ## Thus, we just validate whether the length of powers and coefficients is equal
+  if(length(object@coef) != length(object@power)) {
+    return("Please input coefficients and powers with valid length")
+  }
+  return(TRUE)
+})
+
+## Define a show method
+#' Title: Display a `poly` object
+#'
+#' @param object A `poly` object 
+setMethod("show", "poly",
+  function(object) {
+    
+    ## if the first coefficient is 0, remove it and the first power
+    if (object@coef[1] == 0) {
+      object@coef = object@coef[-1]
+      object@power = object@power[-1]
+    }
+    
+    ## define the first term, which is without signal
+    ## if the first coefficient is 1, remove it from the first term
+    if (object@coef[1] == 1) {
+      ## if the first power is 1, output x instead of x^1
+      if (object@power[1] == 1){
+        term = paste0("x")
+      } else if (object@power[1] == 0) {
+        ## if the first power is 0, output only coefficient instead of x^0
+        term = paste0(object@coef[1])
+      } else if (object@power[1] > 0) {
+        ## if the first power is positive, output x^{power}
+        term = paste0("x^", object@power[1])
+      } else {
+        ## if the first power is negative, output x^{power} instead of x^power
+        term = paste0("x^{", object@power[1], "}")
+      }
+    } else if (object@coef[1] == -1) {
+      ## if the first coefficient is -1, output - instead of -1
+      if (object@power[1] == 1){
+        term = paste0("-x")
+      } else if (object@power[1] == 0) {
+        term = paste0(object@coef[1])
+      } else if (object@power[1] > 0) {
+        term = paste0("-x^", object@power[1])
+      } else {
+        term = paste0("-x^{", object@power[1], "}")
+      }
+    } else if (object@coef[1] == 0) {
+      ## if the first coefficient is 0, skip it
+      term = ""
+    } else {
+      ## if the first coefficient other real number, just put the coefficient as norml
+      if (object@power[1] == 1){
+        term = paste0(object@coef[1], "x")
+      } else if (object@power[1] == 0) {
+        term = paste0(object@coef[1])
+      } else if (object@power[1] > 0) {
+        term = paste0(object@coef[1], "x^", object@power[1])
+      } else {
+        term = paste0(object@coef[1], "x^{", object@power[1], "}")
+      }
+    }
+    
+    ## define the second to the last term
+    for (i in 2:length(object@coef)) {
+      if (object@coef[i] == 1) {
+        ## if coefficient = 1, we add "+" instead of "+1"
+        if (object@power[i] == 1){
+          term = paste0(term, "+", "x")
+        } else if (object@power[i] == 0) {
+          term = paste0(term, "+", object@coef[i])
+        } else if (object@power[i] > 0) {
+          term = paste0(term, "+", "x^", object@power[i])
+        } else{
+          term = paste0(term, "+", "x^{", object@power[i], "}")
+        }
+      } else if (object@coef[i] > 0) {
+        ## if coefficient > 0, we add "+" before the coefficient
+        if (object@power[i] == 1){
+          term = paste0(term, "+", object@coef[i], "x")
+        } else if (object@power[i] == 0) {
+          term = paste0(term, "+", object@coef[i])
+        } else if (object@power[i] > 0) {
+          term = paste0(term, "+", object@coef[i], "x^", object@power[i])
+        } else {
+          term = paste0(term, "+", object@coef[i], "x^{", object@power[i], "}")
+        }
+      } else if (object@coef[i] == 0) {
+        ## if coefficient = 0, skip it
+        next
+      } else if (object@coef[i] == -1) {
+        ## if coefficient = -1, we add "-" instead of "-1"
+        if (object@power[i] == 1){
+          term = paste0(term, "-", "x")
+        } else if (object@power[i] == 0) {
+          term = paste0(term, object@coef[i])
+        } else if (object@power[i] > 0) {
+          term = paste0(term, "-", "x^", object@power[i])
+        } else {
+          term = paste0(term, "-", "x^{", object@power[i], "}")
+        }
+      } else {
+        ## this condition is coefficient < 0, we do not need to add "+"
+        if (object@power[i] == 1){
+          term = paste0(term, object@coef[i], "x")
+        } else if (object@power[i] == 0) {
+          term = paste0(term, object@coef[i])
+        } else if (object@power[i] > 0) {
+          term = paste0(term, object@coef[i], "x^", object@power[i])
+        } else {
+          term = paste0(term, object@coef[i], "x^{", object@power[i], "}")
+        }
+      }
+    }
+    return(cat(term, "\n"))
+  }
+)
+
+## Define addition and substraction models
+#' Title `poly` addition
+#'
+#' @param e1 A `poly` 
+#' @param e2 A `poly`
+#'
+#' @return A `poly` (e1 + e2)
+#' @export
+#'
+#' @examples
+setMethod("+", signature(e1 = "poly",
+                         e2 = "poly"),
+          function(e1, e2) {
+            return(make_poly(c(e1@coef, e2@coef),
+                             c(e1@power, e2@power)))
+          })
+
+#' Title `poly` substraction
+#'
+#' @param e1 A `poly` 
+#' @param e2 A `poly`
+#'
+#' @return A `poly` (e1 - e2)
+#' @export
+#'
+#' @examples
+setMethod("-", signature(e1 = "poly",
+                         e2 = "poly"),
+          function(e1, e2) {
+            return(make_poly(c(e1@coef, -e2@coef),
+                             c(e1@power, e2@power)))
+          })
+```
+
+### (b) Test
+
+\textbf{1 Given Test}
+```{r}
+p1 <- make_poly(c(3,2), c(2,0))
+p2 <- make_poly(c(7,-2,-1,17), c(3,2,1,0))
+p1
+p2
+p1 + p2
+p1 - p2
+```
+\textbf{2 Test for atypical inputs}
+
+```{r}
+#| error: true
+## input contains non-numeric element
+make_poly(c("xyz",2), c(2,0))
+## power contains non-integer or negative number
+make_poly(c(7.3,-2,-1,17.5), c(-1,2.5,1,0))
+## show that it has suppressed terms with coefficients of 0
+make_poly(c(0,-2,1,17.5), c(-1,2,1,0))
+## length does not match
+make_poly(c(0,-2), c(-1,2,1,0))
+```
+
+## Problem 3
+
+### Set up
+
+```{r}
+library(nycflights13)
+flights <- as.data.table(flights)
+airports <- as.data.table(airports)
+planes <- as.data.table(planes)
+# set to print all rows
+options(datatable.print.nrows = 1e9)
+```
+
+### (a) Table generation
+
+\textbf{Table of departure delay per airport}
+```{r}
+## Generate a table reporting the mean and median departure delay per airport
+table_1 <- flights[, .(mean_delay = mean(dep_delay, na.rm = TRUE), 
+            median_delay = median(dep_delay, na.rm = TRUE),
+            n = .N), by = origin] |>
+  _[n > 10] |>
+  _[order(-mean_delay)] |>
+  _[,1:3]
+
+## Use the airport names not the airport codes.
+table_1 <- airports[, 1:2] |>
+  _[table_1, on = c("faa" = "origin"), nomatch = 0L] |>
+  _[, 2:4]
+
+table_1
+```
+
+\textbf{Table of arrival delay per airport}
+```{r}
+## Generate a table reporting the mean and median arrival delay per airport
+table_2 <- flights[, .(mean_delay = mean(arr_delay, na.rm = TRUE), 
+            median_delay = median(arr_delay, na.rm = TRUE),
+            n = .N), by = dest] |>
+  _[n > 10] |>
+  _[order(-mean_delay)] |>
+  _[,1:3]
+
+## Use the airport names not the airport codes.
+table_2 <- airports[, 1:2] |>
+  _[table_2, on = c("faa" = "dest")] |>
+  ## for missing name, just use original code
+  _[, .(name = fcoalesce(name, faa), mean_delay = mean_delay, median_delay = median_delay)]
+
+table_2
+```
+
+### (b) Fastest average speed
+
+```{r}
+## Generate a tibble reporting the number of flights for aircraft model with the fastest average speed
+tibble_1 <- flights |>
+  merge(x = _, planes, by = "tailnum") |>
+  _[, .(model, mph = distance/(air_time/60))] |>
+  _[, .(avgmph = mean(mph, na.rm = TRUE), n = .N), by = model] |>
+  _[order(-avgmph)] |>
+  _[1,]
+
+tibble_1
+```
